@@ -596,6 +596,21 @@ DynamicLibrary {
     }
 
     Group {
+        name: "iOS"
+        condition: qbs.targetOS.contains("ios")
+        files: [
+            "iosfolderaccess.h",
+            "iosfolderaccess.mm",
+        ]
+    }
+
+    Properties {
+        condition: qbs.targetOS.contains("ios")
+        cpp.automaticReferenceCounting: true
+        cpp.frameworks: ["UIKit", "UniformTypeIdentifiers"]
+    }
+
+    Group {
         name: "Sentry"
         condition: project.sentry
         files: [

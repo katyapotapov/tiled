@@ -133,6 +133,9 @@ private:
     bool closeAllFiles();
 
     bool openProjectFile(const QString &fileName);
+#ifdef Q_OS_IOS
+    void openFolder(const QString &path);
+#endif
     void newProject();
     bool closeProject();
     bool switchProject(std::unique_ptr<Project> project);

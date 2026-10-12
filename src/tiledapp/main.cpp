@@ -22,6 +22,7 @@
 
 #include "commandlineparser.h"
 #include "exporthelper.h"
+#include "iosfolderaccess.h"
 #include "logginginterface.h"
 #include "mainwindow.h"
 #include "mapformat.h"
@@ -588,6 +589,11 @@ int main(int argc, char *argv[])
         if (a.sendMessage(QLatin1String(doc.toJson())))
             return 0;
     }
+
+#ifdef Q_OS_IOS
+    // Needs to happen before the session refers to any files in these folders
+    IosFolderAccess::restoreFolders();
+#endif
 
     Session::initialize();
     StyleHelper::initialize();

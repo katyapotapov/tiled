@@ -39,6 +39,7 @@
 #include "donationpopup.h"
 #include "exportasimagedialog.h"
 #include "exporthelper.h"
+#include "iosfolderaccess.h"
 #include "issuescounter.h"
 #include "issuesdock.h"
 #include "layer.h"
@@ -80,6 +81,7 @@
 #include <QActionGroup>
 #include <QCloseEvent>
 #include <QDesktopServices>
+#include <QDirIterator>
 #include <QFileDialog>
 #include <QLabel>
 #include <QMessageBox>
@@ -533,6 +535,15 @@ MainWindow::MainWindow(QWidget *parent, Qt::WindowFlags flags)
     connect(mUi->actionNewMap, &QAction::triggered, this, &MainWindow::newMap);
     connect(mUi->actionNewTileset, &QAction::triggered, this, [this] { newTileset(); });
     connect(mUi->actionOpen, &QAction::triggered, this, &MainWindow::openFileDialog);
+#ifdef Q_OS_IOS
+    // Files outside the app's sandbox can only be accessed through folders
+    // picked by the user
+    auto openFolderAction = new QAction(tr("Open &Folder..."), this);
+    mUi->menuFile->insertAction(mUi->actionOpen, openFolderAction);
+    connect(openFolderAction, &QAction::triggered, this, [this] {
+        IosFolderAccess::pickFolder([this] (const QString &path) { openFolder(path); });
+    });
+#endif
     connect(mUi->actionOpenFileInProject, &QAction::triggered, this, &MainWindow::openFileInProject);
     connect(mUi->actionSearchActions, &QAction::triggered, this, &MainWindow::searchActions);
     connect(mUi->actionGoToTile, &QAction::triggered, this, &MainWindow::goToTile);
@@ -1466,6 +1477,26 @@ bool MainWindow::openProjectFile(const QString &fileName)
 
     return switchProject(std::move(project));
 }
+
+#ifdef Q_OS_IOS
+/**
+ * Opens the first project found in the given folder, or a new unsaved project
+ * containing the folder when there is none.
+ */
+void MainWindow::openFolder(const QString &path)
+{
+    QDirIterator it(path, { QStringLiteral("*.tiled-project") }, QDir::Files,
+                    QDirIterator::Subdirectories);
+    if (it.hasNext()) {
+        openProjectFile(it.next());
+        return;
+    }
+
+    auto project = std::make_unique<Project>();
+    project->addFolder(path);
+    switchProject(std::move(project));
+}
+#endif
 
 void MainWindow::newProject()
 {
