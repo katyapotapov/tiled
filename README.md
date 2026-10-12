@@ -12,6 +12,10 @@ Maps, layers, tiles, and objects can all be assigned arbitrary properties.
 Tiled's map format (TMX) is easy to understand and allows multiple tilesets to
 be used in any map. Tilesets can be modified at any time.
 
+> **About this fork:** We're adding mobile support to Tiled, starting with iOS.
+> This work is in progress and not yet part of upstream
+> [mapeditor/tiled](https://github.com/mapeditor/tiled).
+
 [![Build Packages](https://github.com/mapeditor/tiled/actions/workflows/packages.yml/badge.svg)](https://github.com/mapeditor/tiled/actions/workflows/packages.yml?query=branch%3Amaster+event%3Apush)
 [![Build status](https://ci.appveyor.com/api/projects/status/ceb79jn5cf99y3qd/branch/master?svg=true)](https://ci.appveyor.com/project/bjorn/tiled/branch/master)
 [![Snap](https://snapcraft.io/tiled/badge.svg)](https://snapcraft.io/tiled)
