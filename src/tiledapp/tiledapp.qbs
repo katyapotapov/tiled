@@ -10,6 +10,7 @@ TiledQtGuiApplication {
     consoleApplication: false
 
     Depends { name: "libtilededitor" }
+    Depends { name: "json"; condition: qbs.targetOS.contains("ios") }
     Depends { name: "ib"; condition: qbs.targetOS.contains("macos") }
     Depends { name: "xcode"; condition: qbs.targetOS.contains("macos") }
     Depends { name: "Qt.gui-private"; condition: qbs.targetOS.contains("windows") }
@@ -55,6 +56,13 @@ TiledQtGuiApplication {
         bundle.identifierPrefix: "org.mapeditor"
         ib.appIconName: useIconComposerIcon ? "tiled-icon-macos26" : "tiled-icon-mac"
         targetName: "Tiled"
+    }
+
+    Properties {
+        condition: qbs.targetOS.contains("ios")
+        // Without a launch screen, iOS runs the app in a scaled compatibility
+        // mode rather than at the device's native resolution
+        bundle.infoPlist: ({ "UILaunchScreen": {} })
     }
 
     Properties {

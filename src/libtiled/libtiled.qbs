@@ -1,6 +1,9 @@
 import qbs.Probes as Probes
 
-DynamicLibrary {
+Library {
+    // Qt for iOS only comes as static libraries, so link everything statically
+    type: qbs.targetOS.contains("ios") ? ["staticlibrary"] : ["dynamiclibrary"]
+
     targetName: "tiled"
     cpp.dynamicLibraryPrefix: "lib"
 

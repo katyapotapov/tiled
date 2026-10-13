@@ -59,6 +59,11 @@
 
 #endif // Q_OS_WIN
 
+#ifdef Q_OS_IOS
+// Plugins are linked statically on iOS
+Q_IMPORT_PLUGIN(JsonPlugin)
+#endif
+
 using namespace Tiled;
 
 static QTextStream& stdOut()
@@ -411,6 +416,12 @@ void CommandLineHandler::startNewInstance()
 
 int main(int argc, char *argv[])
 {
+#ifdef Q_OS_IOS
+    // libtilededitor is a static library on iOS, so its resources need to
+    // be initialized explicitly
+    Q_INIT_RESOURCE(tilededitor);
+#endif
+
 #if defined(Q_OS_WIN) && (!defined(Q_CC_MINGW) || __GNUC__ >= 5)
     // Make console output work on Windows, if running in a console.
     if (AttachConsole(ATTACH_PARENT_PROCESS)) {

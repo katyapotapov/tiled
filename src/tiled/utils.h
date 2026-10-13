@@ -95,6 +95,8 @@ QPoint dpiScaled(QPoint value);
 QRectF dpiScaled(QRectF value);
 QSize smallIconSize();
 
+bool isMobileUi();
+
 bool isZoomInShortcut(QKeyEvent *event);
 bool isZoomOutShortcut(QKeyEvent *event);
 bool isResetZoomShortcut(QKeyEvent *event);

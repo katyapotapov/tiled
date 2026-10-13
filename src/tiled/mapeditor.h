@@ -31,6 +31,7 @@
 #include <memory>
 
 class QAction;
+class QActionGroup;
 class QComboBox;
 class QLabel;
 class QMainWindow;
@@ -167,6 +168,11 @@ private:
     void updateLayerComboIndex();
 
     void setupQuickStamps();
+    void addMobileTool(AbstractTool *tool, const QString &label);
+    void selectLayerForTool(AbstractTool *tool);
+    void setupMobileLayout();
+
+    bool eventFilter(QObject *watched, QEvent *event) override;
     void setUseOpenGL(bool useOpenGL);
     void retranslateUi();
     void showTileCollisionShapesChanged(bool enabled);
@@ -210,6 +216,10 @@ private:
     QToolBar *mMainToolBar;
     QToolBar *mToolsToolBar;
     QToolBar *mToolSpecificToolBar;
+    QToolBar *mMobileTopBar = nullptr;
+    QToolBar *mMobileViewBar = nullptr;
+    QActionGroup *mMobileToolGroup = nullptr;
+    QHash<AbstractTool*, QAction*> mMobileToolActions;
     ToolManager *mToolManager;
     AbstractTool *mSelectedTool;
     MapView *mViewWithTool;

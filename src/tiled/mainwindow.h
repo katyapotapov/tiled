@@ -227,6 +227,7 @@ private:
     void writeSettings();
     void readSettings();
     void restoreLayout();
+    void setupMobileLayout();
 
     void updateRecentFilesMenu();
     void updateRecentProjectsMenu();
@@ -262,6 +263,9 @@ private:
     QAction *mShowPropertyTypesEditor;
     QAction *mResetToDefaultLayout;
     QAction *mLockLayout;
+    QAction *mOpenFolderAction = nullptr;
+    QToolBar *mAppBar = nullptr;
+    QLabel *mMobileTitleLabel = nullptr;
 
     void setupQuickStamps();
 

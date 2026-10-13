@@ -71,6 +71,20 @@ namespace Tiled {
 namespace Utils {
 
 /**
+ * Returns whether the touch-friendly mobile UI should be used. This is the
+ * case on iOS, and can be forced elsewhere by setting TILED_MOBILE_UI=1.
+ */
+bool isMobileUi()
+{
+#ifdef Q_OS_IOS
+    return true;
+#else
+    static const bool forced = qEnvironmentVariableIntValue("TILED_MOBILE_UI") == 1;
+    return forced;
+#endif
+}
+
+/**
  * Returns a file dialog filter that matches all readable image formats.
  *
  * This includes all supported map formats, which are rendered to an image when
@@ -487,6 +501,9 @@ static void showInFileManager(const QString &fileName)
         param += QStringLiteral("/select,");
     param += QDir::toNativeSeparators(fileName);
     QProcess::startDetached(QLatin1String("explorer.exe"), param);
+#elif defined(Q_OS_IOS)
+    // There is no file manager that could be asked to reveal the file
+    Q_UNUSED(fileName)
 #elif defined(Q_OS_MAC)
     QStringList scriptArgs;
     scriptArgs << QLatin1String("-e")

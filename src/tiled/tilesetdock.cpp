@@ -323,6 +323,13 @@ TilesetDock::TilesetDock(QWidget *parent)
     retranslateUi();
     setAcceptDrops(true);
 
+    // On mobile, the dock is only used to pick tiles, not to manage tilesets
+    if (Utils::isMobileUi()) {
+        mTilesetFilterEdit->hide();
+        mToolBar->hide();
+        mZoomComboBox->hide();
+    }
+
     updateActions();
 }
 
@@ -617,10 +624,15 @@ void TilesetDock::createTilesetView(int index, TilesetDocument *tilesetDocument)
     // Restore state from last time
     const QString fileName = tilesetDocument->externalOrEmbeddedFileName();
     const QVariantMap fileState = Session::current().fileState(fileName);
+
+    // Tiles are shown larger on mobile, to make them easier to tap
+    const qreal defaultScale = Utils::isMobileUi() ? 2 : 1;
+    view->zoomable()->setScale(defaultScale);
+
     if (fileState.isEmpty()) {
         // Compatibility with Tiled 1.3
         QString path = QLatin1String("TilesetDock/TilesetScale/") + tileset->name();
-        qreal scale = Preferences::instance()->value(path, 1).toReal();
+        qreal scale = Preferences::instance()->value(path, defaultScale).toReal();
         view->zoomable()->setScale(scale);
     } else {
         bool ok;

@@ -45,6 +45,7 @@ public:
     };
 
     void setAutoPanningEnabled(bool enabled) { mAutoPanningEnabled = enabled; }
+    void setLeftButtonPanningEnabled(bool enabled) { mLeftButtonPanningEnabled = enabled; }
 
     PanningMode mode() const { return mMode; }
     void setMode(PanningMode mode);
@@ -67,6 +68,7 @@ private:
     QAbstractScrollArea *mView;
     PanningMode mMode = NoPanning;
     bool mAutoPanningEnabled = false;
+    bool mLeftButtonPanningEnabled = false;
     QPoint mLastMousePos;
     std::optional<Qt::CursorShape> mCursor;
 };

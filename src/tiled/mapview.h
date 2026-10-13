@@ -24,6 +24,7 @@
 
 #include <QGraphicsView>
 #include <QPinchGesture>
+#include <QTimer>
 
 namespace Tiled {
 
@@ -81,8 +82,11 @@ public:
 
     void setUseOpenGL(bool useOpenGL);
 
+    void setLeftButtonPanningEnabled(bool enabled);
+
 protected:
     bool event(QEvent *event) override;
+    bool viewportEvent(QEvent *event) override;
 
     void paintEvent(QPaintEvent *event) override;
     void hideEvent(QHideEvent *) override;
@@ -127,6 +131,19 @@ private:
 
     void scrollBy(QPoint distance);
 
+    bool touchEvent(QTouchEvent *event);
+    void startTouchTool();
+    void sendTouchMouseEvent(QEvent::Type type, QPointF pos);
+    void beginTouchNavigation(const QList<QEventPoint> &points);
+    void updateTouchNavigation(const QList<QEventPoint> &points);
+
+    enum TouchState {
+        NoTouch,
+        TouchPending,       // one finger down, not yet known what it will do
+        TouchTool,          // one finger is driving the current tool
+        TouchNavigation,    // two fingers are panning and zooming
+    };
+
     void setMapDocument(MapDocument *mapDocument);
 
     MapDocument *mMapDocument = nullptr;
@@ -138,6 +155,18 @@ private:
     bool mViewInitialized = false;
     bool mHasInitialCenterPos = false;
     QPointF mInitialCenterPos;
+
+    bool mKeepMapFitted = false;
+
+    TouchState mTouchState = NoTouch;
+    QTimer mTouchToolTimer;
+    bool mTouchMouseDown = false;
+    QPointF mTouchStartPos;
+    QPointF mTouchPos;
+    int mTouchPointCount = 0;
+    qreal mTouchStartScale = 1.0;
+    qreal mTouchStartDistance = 0.0;
+    QPointF mTouchAnchorScenePos;
     QRectF mViewRect;
     Zoomable *mZoomable;
 

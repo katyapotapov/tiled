@@ -538,9 +538,9 @@ MainWindow::MainWindow(QWidget *parent, Qt::WindowFlags flags)
 #ifdef Q_OS_IOS
     // Files outside the app's sandbox can only be accessed through folders
     // picked by the user
-    auto openFolderAction = new QAction(tr("Open &Folder..."), this);
-    mUi->menuFile->insertAction(mUi->actionOpen, openFolderAction);
-    connect(openFolderAction, &QAction::triggered, this, [this] {
+    mOpenFolderAction = new QAction(tr("Open &Folder..."), this);
+    mUi->menuFile->insertAction(mUi->actionOpen, mOpenFolderAction);
+    connect(mOpenFolderAction, &QAction::triggered, this, [this] {
         IosFolderAccess::pickFolder([this] (const QString &path) { openFolder(path); });
     });
 #endif
@@ -2392,8 +2392,94 @@ void MainWindow::readSettings()
 
 void MainWindow::restoreLayout()
 {
+    if (Utils::isMobileUi()) {
+        setupMobileLayout();
+        mDocumentManager->restoreState();
+        return;
+    }
+
     restoreState(preferences::mainWindowState);
     mDocumentManager->restoreState();
+}
+
+/**
+ * Sets up a touch-friendly layout. Instead of the menu bar, status bar and
+ * main toolbar, an app bar provides the most common actions. The project dock
+ * lists the levels, and hides once one is opened.
+ */
+void MainWindow::setupMobileLayout()
+{
+    menuBar()->hide();
+    statusBar()->hide();
+
+    mConsoleDock->hide();
+    mIssuesDock->hide();
+
+    mProjectDock->setFeatures(QDockWidget::DockWidgetClosable);
+    if (dockWidgetArea(mProjectDock) != Qt::LeftDockWidgetArea)
+        addDockWidget(Qt::LeftDockWidgetArea, mProjectDock);
+
+    if (mAppBar)
+        return;
+
+    mAppBar = new QToolBar(tr("App Bar"), this);
+    mAppBar->setObjectName(QStringLiteral("appBar"));
+    mAppBar->setMovable(false);
+    mAppBar->setFloatable(false);
+    mAppBar->setIconSize(QSize(32, 32));
+    mAppBar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+
+    QAction *levelsAction = mProjectDock->toggleViewAction();
+    levelsAction->setText(tr("Levels"));
+    levelsAction->setIcon(QIcon(QStringLiteral(":images/24/document-open.png")));
+    mAppBar->addAction(levelsAction);
+
+    if (mOpenFolderAction)
+        mAppBar->addAction(mOpenFolderAction);
+
+    mMobileTitleLabel = new QLabel(mAppBar);
+    mMobileTitleLabel->setAlignment(Qt::AlignCenter);
+    mMobileTitleLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    QFont titleFont = mMobileTitleLabel->font();
+    titleFont.setBold(true);
+    mMobileTitleLabel->setFont(titleFont);
+    mAppBar->addWidget(mMobileTitleLabel);
+
+    for (const char *id : { "Undo", "Redo" }) {
+        QAction *action = ActionManager::action(id);
+        mAppBar->addAction(action);
+        if (auto button = qobject_cast<QToolButton*>(mAppBar->widgetForAction(action)))
+            button->setToolButtonStyle(Qt::ToolButtonIconOnly);
+    }
+    mAppBar->addAction(mUi->actionSave);
+
+    auto moreMenu = new QMenu(mAppBar);
+    moreMenu->addAction(mUi->actionOpen);
+    moreMenu->addAction(mUi->actionSaveAs);
+    moreMenu->addAction(mUi->actionReload);
+    moreMenu->addAction(mUi->actionClose);
+    moreMenu->addSeparator();
+    moreMenu->addAction(mUi->actionMapProperties);
+    moreMenu->addAction(mUi->actionResizeMap);
+
+    auto moreButton = new QToolButton(mAppBar);
+    moreButton->setText(tr("More"));
+    moreButton->setIcon(QIcon(QStringLiteral(":images/24/system-run.png")));
+    moreButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    moreButton->setPopupMode(QToolButton::InstantPopup);
+    moreButton->setMenu(moreMenu);
+    mAppBar->addWidget(moreButton);
+
+    addToolBar(Qt::TopToolBarArea, mAppBar);
+
+    // Make room for the map once a level is opened
+    connect(mDocumentManager, &DocumentManager::currentDocumentChanged,
+            this, [this] (Document *document) {
+        if (document)
+            mProjectDock->hide();
+    });
+
+    updateWindowTitle();
 }
 
 void MainWindow::updateWindowTitle()
@@ -2412,6 +2498,17 @@ void MainWindow::updateWindowTitle()
         setWindowTitle(projectName);
         setWindowFilePath(QString());
         setWindowModified(false);
+    }
+
+    // The window title isn't shown on mobile
+    if (mMobileTitleLabel) {
+        QString title;
+        if (Document *document = mDocumentManager->currentDocument()) {
+            title = document->displayName();
+            if (document->isModified())
+                title += QStringLiteral(" \u2022");
+        }
+        mMobileTitleLabel->setText(title);
     }
 }
 

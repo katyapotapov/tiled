@@ -173,7 +173,7 @@ bool PannableViewHelper::mousePressEvent(QMouseEvent *event)
 
     if (button == Qt::MiddleButton && mView->isActiveWindow())
         setMode((MapView::ourAutoScrollingEnabled && mAutoPanningEnabled) ? AutoPanning : DragPanning);
-    else if (button == Qt::LeftButton && SpaceBarEventFilter::isSpacePressed())
+    else if (button == Qt::LeftButton && (SpaceBarEventFilter::isSpacePressed() || mLeftButtonPanningEnabled))
         setMode(DragPanning);
 
     return mMode != NoPanning;
@@ -188,9 +188,9 @@ bool PannableViewHelper::mouseReleaseEvent(QMouseEvent *event)
     const auto buttons = event->buttons();
 
     // Stop scrolling only when middle button is no longer pressed and left +
-    // space are no longer pressed.
-    if (!(buttons & Qt::MiddleButton) &&
-            !(SpaceBarEventFilter::isSpacePressed() && buttons & Qt::LeftButton)) {
+    // space (or left, when it pans by itself) are no longer pressed.
+    const bool leftButtonPans = SpaceBarEventFilter::isSpacePressed() || mLeftButtonPanningEnabled;
+    if (!(buttons & Qt::MiddleButton) && !(leftButtonPans && buttons & Qt::LeftButton)) {
         setMode(NoPanning);
     }
 

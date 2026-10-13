@@ -86,6 +86,7 @@ protected:
 private:
     void onActivated(const QModelIndex &index);
     void onRowsInserted(const QModelIndex &parent);
+    void expandRootFoldersOnMobile();
 
     void restoreExpanded(const QModelIndex &parent);
 
@@ -251,8 +252,19 @@ ProjectView::ProjectView(QWidget *parent)
     connect(this, &QAbstractItemView::activated,
             this, &ProjectView::onActivated);
 
+    // Double-tapping is awkward on touch screens, so open files with a tap,
+    // and make the rows easier to hit
+    if (Utils::isMobileUi()) {
+        setStyleSheet(QStringLiteral("QTreeView::item { padding: 8px 0; }"));
+        connect(this, &QAbstractItemView::clicked,
+                this, &ProjectView::onActivated);
+    }
+
     connect(mProxyModel, &QAbstractItemModel::rowsInserted,
             this, &ProjectView::onRowsInserted);
+    connect(mProxyModel, &QAbstractItemModel::modelReset,
+            this, &ProjectView::expandRootFoldersOnMobile);
+    expandRootFoldersOnMobile();
 
     connect(this, &QTreeView::expanded,
             this, [=] (const QModelIndex &index) {
@@ -412,8 +424,21 @@ void ProjectView::onActivated(const QModelIndex &index)
 
 void ProjectView::onRowsInserted(const QModelIndex &parent)
 {
-    if (parent.isValid())
+    if (parent.isValid()) {
         restoreExpanded(parent);
+    } else {
+        expandRootFoldersOnMobile();
+    }
+}
+
+void ProjectView::expandRootFoldersOnMobile()
+{
+    if (!Utils::isMobileUi())
+        return;
+
+    // Save a tap by showing the contents of the project's folders
+    for (int row = 0, count = model()->rowCount(); row < count; ++row)
+        setExpanded(model()->index(row, 0), true);
 }
 
 void ProjectView::restoreExpanded(const QModelIndex &parent)

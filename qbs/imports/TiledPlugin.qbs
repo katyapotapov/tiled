@@ -1,6 +1,10 @@
 import qbs.FileInfo
 
-DynamicLibrary {
+Library {
+    // Qt for iOS only comes as static libraries, so plugins are linked
+    // statically into the app
+    type: qbs.targetOS.contains("ios") ? ["staticlibrary"] : ["dynamiclibrary"]
+
     Depends { name: "libtiled" }
     Depends { name: "cpp" }
     Depends { name: "Qt"; submodules: "gui" }
@@ -19,14 +23,14 @@ DynamicLibrary {
         "QT_NO_DEPRECATED_WARNINGS",
         "QT_NO_FOREACH",
         "QT_NO_URL_CAST_FROM_STRING"
-    ]
+    ].concat(qbs.targetOS.contains("ios") ? ["QT_STATICPLUGIN"] : [])
 
     Properties {
         condition: qbs.targetOS.contains("macos")
         bundle.isBundle: false
     }
 
-    install: true
+    install: !qbs.targetOS.contains("ios")
     installDir: {
         if (project.windowsLayout)
             return "plugins/tiled"

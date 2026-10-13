@@ -2,7 +2,10 @@ import qbs.File
 import qbs.FileInfo
 import qbs.TextFile
 
-DynamicLibrary {
+Library {
+    // Qt for iOS only comes as static libraries, so link everything statically
+    type: qbs.targetOS.contains("ios") ? ["staticlibrary"] : ["dynamiclibrary"]
+
     targetName: "tilededitor"
 
     Depends { name: "libtiled" }
@@ -12,7 +15,7 @@ DynamicLibrary {
     Depends { name: "Qt.svg"; condition: qbs.targetOS.contains("macos") }
     Depends { name: "Qt.openglwidgets"; required: false }
     Depends { name: "Qt.dbus"; condition: qbs.targetOS.contains("linux") && project.dbus; required: false }
-    Depends { name: "Qt.gui-private"; condition: qbs.targetOS.contains("windows") }
+    Depends { name: "Qt.gui-private"; condition: qbs.targetOS.contains("windows") || qbs.targetOS.contains("ios") }
 
     cpp.includePaths: {
         var paths = ["."];
@@ -367,6 +370,8 @@ DynamicLibrary {
         "offsetmapdialog.ui",
         "painttilelayer.cpp",
         "painttilelayer.h",
+        "pantool.cpp",
+        "pantool.h",
         "pannableviewhelper.cpp",
         "pannableviewhelper.h",
         "pluginlistmodel.cpp",

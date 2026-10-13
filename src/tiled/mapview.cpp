@@ -38,7 +38,12 @@
 #include <QGestureEvent>
 #include <QPinchGesture>
 #include <QScrollBar>
+#include <QTouchEvent>
 #include <QWheelEvent>
+
+#ifdef Q_OS_IOS
+#include <qpa/qwindowsysteminterface.h>
+#endif
 
 #ifndef QT_NO_OPENGL
 
@@ -88,12 +93,24 @@ MapView::MapView(QWidget *parent)
     // Adjustment for antialiasing is done by the items that need it
     setOptimizationFlags(QGraphicsView::DontAdjustForAntialiasing);
 
-    grabGesture(Qt::PinchGesture);
-
     setVerticalScrollBar(new FlexibleScrollBar(Qt::Vertical, this));
     setHorizontalScrollBar(new FlexibleScrollBar(Qt::Horizontal, this));
-    setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
-    setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+
+    if (Utils::isMobileUi()) {
+        // Touches are handled directly (see touchEvent), and the view is
+        // panned with gestures rather than scroll bars
+        v->setAttribute(Qt::WA_AcceptTouchEvents);
+        setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
+        mTouchToolTimer.setSingleShot(true);
+        mTouchToolTimer.setInterval(80);
+        connect(&mTouchToolTimer, &QTimer::timeout, this, &MapView::startTouchTool);
+    } else {
+        grabGesture(Qt::PinchGesture);
+        setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+        setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+    }
 
     connect(horizontalScrollBar(), &QAbstractSlider::valueChanged, this, &MapView::updateViewRect);
     connect(horizontalScrollBar(), &QAbstractSlider::rangeChanged, this, &MapView::updateViewRect);
@@ -114,6 +131,8 @@ MapView::MapView(QWidget *parent)
 
         if (mode == PannableViewHelper::AutoPanning)
             mScrollStartPos = mLastMousePos;
+        if (mode != PannableViewHelper::NoPanning)
+            mKeepMapFitted = false;
 
         setInteractive(mode == PannableViewHelper::NoPanning);
         updatePanningDriverState();
@@ -222,6 +241,8 @@ void MapView::setUseOpenGL(bool useOpenGL)
     QWidget *v = viewport();
     v->setAttribute(Qt::WA_StaticContents);
     v->setMouseTracking(true);
+    if (Utils::isMobileUi())
+        v->setAttribute(Qt::WA_AcceptTouchEvents);
 #else
     Q_UNUSED(useOpenGL)
 #endif
@@ -463,15 +484,221 @@ bool MapView::event(QEvent *e)
     return QGraphicsView::event(e);
 }
 
+bool MapView::viewportEvent(QEvent *event)
+{
+    switch (event->type()) {
+    case QEvent::TouchBegin:
+    case QEvent::TouchUpdate:
+    case QEvent::TouchEnd:
+    case QEvent::TouchCancel:
+        if (Utils::isMobileUi())
+            return touchEvent(static_cast<QTouchEvent*>(event));
+        break;
+    default:
+        break;
+    }
+
+    return QGraphicsView::viewportEvent(event);
+}
+
+/**
+ * Handles touches in the mobile UI. A single finger drives the current tool,
+ * through synthesized mouse events. Two fingers pan and zoom the view.
+ *
+ * Since a second finger rarely lands at exactly the same time as the first,
+ * the tool only starts after a short delay or once the finger moved.
+ */
+bool MapView::touchEvent(QTouchEvent *event)
+{
+    QList<QEventPoint> activePoints;
+    for (const QEventPoint &point : event->points())
+        if (point.state() != QEventPoint::Released)
+            activePoints.append(point);
+
+    const bool finished = event->type() == QEvent::TouchEnd ||
+            event->type() == QEvent::TouchCancel;
+
+    if (finished || activePoints.isEmpty()) {
+        mTouchToolTimer.stop();
+
+        switch (mTouchState) {
+        case TouchPending:
+            // A tap
+            if (event->type() != QEvent::TouchCancel) {
+                startTouchTool();
+                sendTouchMouseEvent(QEvent::MouseButtonRelease, mTouchPos);
+            }
+            break;
+        case TouchTool:
+            sendTouchMouseEvent(QEvent::MouseButtonRelease, mTouchPos);
+            break;
+        case TouchNavigation:
+        case NoTouch:
+            break;
+        }
+
+        if (mTouchState == TouchPending || mTouchState == TouchTool) {
+            // Without a finger on the screen, there is nothing to hover
+            QEvent leaveEvent(QEvent::Leave);
+            QCoreApplication::sendEvent(viewport(), &leaveEvent);
+        }
+
+        mTouchState = NoTouch;
+        mTouchPointCount = 0;
+        return true;
+    }
+
+    if (activePoints.size() >= 2) {
+        switch (mTouchState) {
+        case TouchTool: {
+            // Finish what the tool was doing before navigating
+            sendTouchMouseEvent(QEvent::MouseButtonRelease, mTouchPos);
+            QEvent leaveEvent(QEvent::Leave);
+            QCoreApplication::sendEvent(viewport(), &leaveEvent);
+            Q_FALLTHROUGH();
+        }
+        case NoTouch:
+        case TouchPending:
+            mTouchToolTimer.stop();
+            mTouchState = TouchNavigation;
+            beginTouchNavigation(activePoints);
+            break;
+        case TouchNavigation:
+            if (activePoints.size() != mTouchPointCount)
+                beginTouchNavigation(activePoints);
+            else
+                updateTouchNavigation(activePoints);
+            break;
+        }
+        return true;
+    }
+
+    // One finger
+    mTouchPos = activePoints.first().position();
+
+    switch (mTouchState) {
+    case NoTouch:
+        mTouchState = TouchPending;
+        mTouchStartPos = mTouchPos;
+        mTouchToolTimer.start();
+        break;
+    case TouchPending: {
+        const QPointF moved = mTouchPos - mTouchStartPos;
+        if (moved.manhattanLength() > QApplication::startDragDistance()) {
+            mTouchToolTimer.stop();
+            startTouchTool();
+        }
+        break;
+    }
+    case TouchTool:
+        sendTouchMouseEvent(QEvent::MouseMove, mTouchPos);
+        break;
+    case TouchNavigation:
+        // Keep navigating until all fingers are lifted, to avoid
+        // accidentally using the tool with the remaining finger
+        break;
+    }
+
+    return true;
+}
+
+void MapView::startTouchTool()
+{
+    if (mTouchState != TouchPending)
+        return;
+
+    mTouchState = TouchTool;
+
+    // Tools only act once the mouse entered the view, and they track the
+    // mouse position, so enter and hover the start position first
+    QWidget *v = viewport();
+    QEnterEvent enterEvent(mTouchStartPos, mTouchStartPos, v->mapToGlobal(mTouchStartPos));
+    QCoreApplication::sendEvent(v, &enterEvent);
+    sendTouchMouseEvent(QEvent::MouseMove, mTouchStartPos);
+    sendTouchMouseEvent(QEvent::MouseButtonPress, mTouchStartPos);
+    if (mTouchPos != mTouchStartPos)
+        sendTouchMouseEvent(QEvent::MouseMove, mTouchPos);
+}
+
+void MapView::sendTouchMouseEvent(QEvent::Type type, QPointF pos)
+{
+    Qt::MouseButton button = Qt::NoButton;
+    if (type == QEvent::MouseButtonPress) {
+        button = Qt::LeftButton;
+        mTouchMouseDown = true;
+    } else if (type == QEvent::MouseButtonRelease) {
+        button = Qt::LeftButton;
+        mTouchMouseDown = false;
+    }
+
+    const Qt::MouseButtons buttons = mTouchMouseDown ? Qt::LeftButton : Qt::NoButton;
+
+    QWidget *v = viewport();
+    const QPointF globalPos = v->mapToGlobal(pos);
+
+#ifdef Q_OS_IOS
+    // Deliver the event like a real one, mainly so that QCursor::pos(),
+    // which several tools rely on, follows the finger
+    if (QWindow *window = v->window()->windowHandle()) {
+        const QPointF windowPos = v->window()->mapFromGlobal(globalPos);
+        QWindowSystemInterface::handleMouseEvent<QWindowSystemInterface::SynchronousDelivery>(
+                    window, windowPos, globalPos, buttons, button, type);
+        return;
+    }
+#endif
+
+    QMouseEvent mouseEvent(type, pos, globalPos, button, buttons, Qt::NoModifier);
+    QCoreApplication::sendEvent(v, &mouseEvent);
+}
+
+static QPointF touchCenter(const QList<QEventPoint> &points)
+{
+    return (points.at(0).position() + points.at(1).position()) / 2;
+}
+
+static qreal touchDistance(const QList<QEventPoint> &points)
+{
+    return QLineF(points.at(0).position(), points.at(1).position()).length();
+}
+
+void MapView::beginTouchNavigation(const QList<QEventPoint> &points)
+{
+    mKeepMapFitted = false;
+    mTouchPointCount = points.size();
+    mTouchStartScale = mZoomable->scale();
+    mTouchStartDistance = touchDistance(points);
+    mTouchAnchorScenePos = mapToScene(touchCenter(points).toPoint());
+}
+
+void MapView::updateTouchNavigation(const QList<QEventPoint> &points)
+{
+    if (mTouchStartDistance > 0)
+        mZoomable->setScale(mTouchStartScale * touchDistance(points) / mTouchStartDistance);
+
+    // Keep the scene position that started under the fingers under them
+    const QPointF centerScenePos = mapToScene(touchCenter(points).toPoint());
+    forceCenterOn(viewCenter() + mTouchAnchorScenePos - centerScenePos);
+}
+
+void MapView::setLeftButtonPanningEnabled(bool enabled)
+{
+    mPannableViewHelper->setLeftButtonPanningEnabled(enabled);
+}
+
 void MapView::paintEvent(QPaintEvent *event)
 {
     if (!mViewInitialized) {
         mViewInitialized = true;
 
-        if (mHasInitialCenterPos)
+        if (mHasInitialCenterPos) {
             forceCenterOn(mInitialCenterPos);
-        else
+        } else {
             fitMapInView();
+
+            // On mobile, the view may still be resized while the layout
+            // settles or when the device rotates
+            mKeepMapFitted = Utils::isMobileUi();
+        }
     }
 
     if (auto scene = mapScene())
@@ -493,6 +720,9 @@ void MapView::resizeEvent(QResizeEvent *event)
         updateSceneRect(s->sceneRect());
 
     QGraphicsView::resizeEvent(event);
+
+    if (mKeepMapFitted)
+        fitMapInView();
 }
 
 void MapView::keyPressEvent(QKeyEvent *event)

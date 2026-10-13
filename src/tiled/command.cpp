@@ -30,6 +30,7 @@
 #include "worldmanager.h"
 
 #include <QAction>
+#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QMessageBox>
@@ -41,6 +42,7 @@ using namespace Tiled;
 
 namespace Tiled {
 
+#if QT_CONFIG(process)
 class CommandProcess : public QProcess
 {
     Q_OBJECT
@@ -62,6 +64,7 @@ private:
     QTemporaryFile mFile;
 #endif
 };
+#endif // QT_CONFIG(process)
 
 
 static QString replaceVariables(const QString &string, bool quoteValues = true)
@@ -170,8 +173,13 @@ void Command::execute(bool inTerminal) const
         }
     }
 
+#if QT_CONFIG(process)
     // Start the process
     new CommandProcess(*this, inTerminal, showOutput);
+#else
+    Q_UNUSED(inTerminal)
+    Tiled::ERROR(QCoreApplication::translate("Command", "Executing commands is not supported on this platform"));
+#endif
 }
 
 /**
@@ -229,6 +237,7 @@ Command Command::fromVariant(const QVariant &variant)
     return command;
 }
 
+#if QT_CONFIG(process)
 CommandProcess::CommandProcess(const Command &command, bool inTerminal, bool showOutput)
     : QProcess(DocumentManager::instance())
     , mName(command.name)
@@ -346,3 +355,4 @@ void CommandProcess::reportErrorAndDelete(const QString &error)
 }
 
 #include "command.moc"
+#endif // QT_CONFIG(process)

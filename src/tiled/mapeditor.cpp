@@ -20,6 +20,7 @@
 
 #include "mapeditor.h"
 
+#include "actionmanager.h"
 #include "addremovetileset.h"
 #include "bucketfilltool.h"
 #include "changeselectedarea.h"
@@ -52,6 +53,7 @@
 #include "objectsdock.h"
 #include "objectselectiontool.h"
 #include "objecttemplate.h"         // used when compiling against Qt 5
+#include "pantool.h"
 #include "preferences.h"
 #include "propertiesdock.h"
 #include "reversingproxymodel.h"
@@ -72,12 +74,14 @@
 #include "toolmanager.h"
 #include "treeviewcombobox.h"
 #include "undodock.h"
+#include "utils.h"
 #include "wangbrush.h"
 #include "wangdock.h"
 #include "zoomable.h"
 #include "worldmanager.h"
 #include "worldmovemaptool.h"
 
+#include <QActionGroup>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QHBoxLayout>
@@ -184,6 +188,17 @@ MapEditor::MapEditor(QObject *parent)
     CreateObjectTool *polygonObjectsTool = new CreatePolygonObjectTool(this);
     CreateObjectTool *textObjectsTool = new CreateTextObjectTool(this);
 
+    if (Utils::isMobileUi()) {
+        // Only the tools needed to paint tiles and place tile objects
+        mMobileToolGroup = new QActionGroup(this);
+        addMobileTool(new PanTool(this), tr("Pan"));
+        addMobileTool(mStampBrush, tr("Paint"));
+        addMobileTool(new Eraser(this), tr("Erase"));
+        addMobileTool(mBucketFillTool, tr("Fill"));
+        mToolsToolBar->addSeparator();
+        addMobileTool(new ObjectSelectionTool(this), tr("Select"));
+        addMobileTool(tileObjectsTool, tr("Place"));
+    } else {
     mToolsToolBar->addAction(mToolManager->registerTool(mStampBrush));
     mToolsToolBar->addAction(mToolManager->registerTool(mWangBrush));
     mToolsToolBar->addAction(mToolManager->registerTool(mBucketFillTool));
@@ -226,6 +241,7 @@ MapEditor::MapEditor(QObject *parent)
             mToolManager->unregisterTool(tool);
         }
     });
+    }
 
     mToolManager->createShortcuts(mMainWindow);
 
@@ -233,7 +249,10 @@ MapEditor::MapEditor(QObject *parent)
     mTemplatesDock->setPropertiesDock(mPropertiesDock);
     mTileStampsDock = new TileStampsDock(mTileStampManager, mMainWindow);
 
-    resetLayout();
+    if (Utils::isMobileUi())
+        setupMobileLayout();
+    else
+        resetLayout();
 
     mComboBoxProxyModel->setSourceModel(mReversingProxyModel);
     mLayerComboBox->setModel(mComboBoxProxyModel);
@@ -316,12 +335,19 @@ MapEditor::~MapEditor()
 
 void MapEditor::saveState()
 {
+    if (Utils::isMobileUi())
+        return;
+
     preferences::mapEditorSize = mMainWindow->size();
     preferences::mapEditorState = mMainWindow->saveState();
 }
 
 void MapEditor::restoreState()
 {
+    // The mobile layout is fixed
+    if (Utils::isMobileUi())
+        return;
+
     QSize size = preferences::mapEditorSize;
     if (!size.isEmpty()) {
         mMainWindow->resize(size);
@@ -430,6 +456,9 @@ void MapEditor::setCurrentDocument(Document *document)
     mLayerComboBox->setEnabled(mapDocument);
     updateLayerComboIndex();
 
+    for (QAction *mobileToolAction : std::as_const(mMobileToolActions))
+        mobileToolAction->setEnabled(mapDocument);
+
     // Take the currently active tool to the new map view
     if (mViewWithTool) {
         MapScene *mapScene = mViewWithTool->mapScene();
@@ -490,6 +519,10 @@ QList<QDockWidget *> MapEditor::dockWidgets() const
 
 QList<QWidget *> MapEditor::statusBarWidgets() const
 {
+    // The mobile UI has no status bar
+    if (Utils::isMobileUi())
+        return {};
+
     return {
         mStatusInfoLabel.get()
     };
@@ -497,6 +530,10 @@ QList<QWidget *> MapEditor::statusBarWidgets() const
 
 QList<QWidget *> MapEditor::permanentStatusBarWidgets() const
 {
+    // In the mobile UI these are part of the top bar instead
+    if (Utils::isMobileUi())
+        return {};
+
     return {
         mLayerComboBox.get(),
         mZoomComboBox.get()
@@ -551,6 +588,11 @@ void MapEditor::performStandardAction(StandardAction action)
  */
 void MapEditor::resetLayout()
 {
+    if (Utils::isMobileUi()) {
+        setupMobileLayout();
+        return;
+    }
+
     // Remove dock widgets and set them to visible
     const QList<QDockWidget*> dockWidgets = this->dockWidgets();
     for (auto dockWidget : dockWidgets) {
@@ -590,6 +632,154 @@ void MapEditor::resetLayout()
     mUndoDock->setVisible(false);
     mTemplatesDock->setVisible(false);
     mTileStampsDock->setVisible(false);
+}
+
+/**
+ * Adds a tool to the mobile tool rail. Unlike the tool's own action, the
+ * rail's action is enabled regardless of the current layer, since it switches
+ * to a layer the tool can be used on.
+ */
+void MapEditor::addMobileTool(AbstractTool *tool, const QString &label)
+{
+    mToolManager->registerTool(tool);
+
+    QAction *action = mToolsToolBar->addAction(tool->icon(), label);
+    action->setToolTip(tool->name());
+    action->setCheckable(true);
+    action->setEnabled(false);  // until a map is opened
+    mMobileToolGroup->addAction(action);
+    mMobileToolActions.insert(tool, action);
+
+    connect(action, &QAction::triggered, this, [this, tool] {
+        selectLayerForTool(tool);
+        mToolManager->selectTool(tool);
+    });
+}
+
+/**
+ * Makes sure the current layer is one the given tool can be used on, by
+ * switching to the topmost suitable layer (preferring visible ones).
+ */
+void MapEditor::selectLayerForTool(AbstractTool *tool)
+{
+    if (!mCurrentMapDocument)
+        return;
+
+    const int layerTypes = tool->targetLayerType();
+    if (!layerTypes || layerTypes == Layer::AnyLayerType)
+        return;
+
+    const Layer *currentLayer = mCurrentMapDocument->currentLayer();
+    if (currentLayer && currentLayer->layerType() & layerTypes)
+        return;
+
+    Layer *topmostLayer = nullptr;
+    Layer *topmostVisibleLayer = nullptr;
+    for (Layer *layer : mCurrentMapDocument->map()->allLayers(layerTypes)) {
+        topmostLayer = layer;
+        if (!layer->isHidden())
+            topmostVisibleLayer = layer;
+    }
+
+    if (Layer *layer = topmostVisibleLayer ? topmostVisibleLayer : topmostLayer)
+        mCurrentMapDocument->switchCurrentLayer(layer);
+}
+
+/**
+ * Sets up a touch-friendly layout, which leaves most of the screen to the map.
+ * Only the tool rail, a top bar, the tilesets and (on request) the properties
+ * are shown.
+ */
+void MapEditor::setupMobileLayout()
+{
+    mMainWindow->setIconSize(QSize(32, 32));
+
+    // New, open, save, undo and redo are part of the app bar instead
+    mMainWindow->removeToolBar(mMainToolBar);
+    mMainToolBar->hide();
+
+    if (!mMobileTopBar) {
+        mMobileTopBar = new QToolBar(mMainWindow);
+        mMobileTopBar->setObjectName(QStringLiteral("mobileTopBar"));
+        mMobileTopBar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+
+        mMobileTopBar->addWidget(mLayerComboBox.get());
+        mLayerComboBox->show();
+
+        QAction *deleteAction = ActionManager::action("Delete");
+        if (deleteAction->icon().isNull())
+            deleteAction->setIcon(QIcon(QStringLiteral(":images/scalable/edit-delete-symbolic.svg")));
+        mMobileTopBar->addAction(deleteAction);
+
+        // The tool options are placed between the top bar and the view bar,
+        // so that showing them doesn't move anything else
+        mMobileViewBar = new QToolBar(mMainWindow);
+        mMobileViewBar->setObjectName(QStringLiteral("mobileViewBar"));
+        mMobileViewBar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+
+        auto spacer = new QWidget(mMobileViewBar);
+        spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        mMobileViewBar->addWidget(spacer);
+
+        mMobileViewBar->addWidget(mZoomComboBox.get());
+        mZoomComboBox->show();
+
+        QAction *fitAction = ActionManager::action("FitInView");
+        fitAction->setIconText(tr("Fit"));
+        mMobileViewBar->addAction(fitAction);
+
+        QAction *propertiesAction = mPropertiesDock->toggleViewAction();
+        propertiesAction->setIcon(QIcon(QStringLiteral(":images/24/document-properties.png")));
+        mMobileViewBar->addAction(propertiesAction);
+    }
+
+    mToolsToolBar->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+
+    for (QToolBar *toolBar : { mToolsToolBar, mMobileTopBar, mToolSpecificToolBar, mMobileViewBar }) {
+        toolBar->setMovable(false);
+        toolBar->setFloatable(false);
+    }
+    mToolsToolBar->show();
+    mMobileTopBar->show();
+    mMobileViewBar->show();
+    mToolSpecificToolBar->setVisible(!mToolSpecificToolBar->actions().isEmpty());
+
+    mMainWindow->addToolBar(Qt::LeftToolBarArea, mToolsToolBar);
+    mMainWindow->addToolBar(Qt::TopToolBarArea, mMobileTopBar);
+    mMainWindow->addToolBar(Qt::TopToolBarArea, mToolSpecificToolBar);
+    mMainWindow->addToolBar(Qt::TopToolBarArea, mMobileViewBar);
+
+    // Only the tilesets and properties are shown. The other docks are added
+    // as well, so they appear docked in case anything shows them.
+    const QList<QDockWidget*> dockWidgets = this->dockWidgets();
+    for (auto dockWidget : dockWidgets) {
+        mMainWindow->removeDockWidget(dockWidget);
+        dockWidget->setFeatures(QDockWidget::DockWidgetClosable);
+        mMainWindow->addDockWidget(Qt::RightDockWidgetArea, dockWidget);
+        dockWidget->hide();
+    }
+
+    // Wide enough to show the property names
+    mPropertiesDock->setMinimumWidth(340);
+
+    mMainWindow->addDockWidget(Qt::BottomDockWidgetArea, mTilesetDock);
+    mTilesetDock->setFeatures(QDockWidget::NoDockWidgetFeatures);
+    if (!mTilesetDock->titleBarWidget())    // the tabs name the tilesets
+        mTilesetDock->setTitleBarWidget(new QWidget(mTilesetDock));
+    mTilesetDock->show();
+
+    // Docks can only be resized once the window is shown
+    mMainWindow->installEventFilter(this);
+}
+
+bool MapEditor::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == mMainWindow && event->type() == QEvent::Show) {
+        mMainWindow->removeEventFilter(this);
+        mMainWindow->resizeDocks({ mTilesetDock }, { 220 }, Qt::Vertical);
+    }
+
+    return Editor::eventFilter(watched, event);
 }
 
 Zoomable *MapEditor::zoomable() const
@@ -633,12 +823,15 @@ void MapEditor::restoreDocumentState(MapDocument *mapDocument) const
     if (fileState.isEmpty())
         return;
 
-    const qreal scale = fileState.value(QStringLiteral("scale")).toReal();
-    if (scale > 0)
-        mapView->zoomable()->setScale(scale);
+    // On mobile, the map is fitted to the screen instead
+    if (!Utils::isMobileUi()) {
+        const qreal scale = fileState.value(QStringLiteral("scale")).toReal();
+        if (scale > 0)
+            mapView->zoomable()->setScale(scale);
 
-    const QPointF viewCenter = fromSettingsValue<QPointF>(fileState.value(QStringLiteral("viewCenter")));
-    mapView->forceCenterOn(viewCenter);
+        const QPointF viewCenter = fromSettingsValue<QPointF>(fileState.value(QStringLiteral("viewCenter")));
+        mapView->forceCenterOn(viewCenter);
+    }
 
     const int layerIndex = fileState.value(QStringLiteral("selectedLayer")).toInt();
     if (Layer *layer = layerAtGlobalIndex(mapDocument->map(), layerIndex))
@@ -673,7 +866,14 @@ void MapEditor::onSelectedToolChanged(AbstractTool *tool)
                 this, &MapEditor::cursorChanged);
 
         tool->populateToolBar(mToolSpecificToolBar);
+
+        if (QAction *mobileToolAction = mMobileToolActions.value(tool))
+            mobileToolAction->setChecked(true);
     }
+
+    // Avoid an empty bar taking space on mobile
+    if (Utils::isMobileUi())
+        mToolSpecificToolBar->setVisible(!mToolSpecificToolBar->actions().isEmpty());
 
     updateActiveUndoStack();
     emit selectedToolChanged(tool);

@@ -1087,7 +1087,9 @@ void ObjectSelectionTool::updateHandleVisibility()
     const bool hasSelection = !objects.isEmpty();
     const bool hasResizableObject = std::any_of(objects.begin(), objects.end(), canResize);
     const bool showHandles = hasSelection && (objects.size() > 1 || hasResizableObject) && (mAction == NoAction || mAction == Selecting);
-    const bool showOrigin = hasSelection &&
+    // On touch screens the origin would be in the way of moving objects,
+    // since it's usually in the middle of them
+    const bool showOrigin = hasSelection && !Utils::isMobileUi() &&
             mAction != Moving && (mMode == Rotate || mAction == Resizing);
 
     for (RotateHandle *handle : mRotateHandles)

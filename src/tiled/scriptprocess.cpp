@@ -41,6 +41,8 @@
 
 namespace Tiled {
 
+#if QT_CONFIG(process)
+
 class ScriptProcess : public QObject
 {
     Q_OBJECT
@@ -320,13 +322,20 @@ QString ScriptProcess::decode(const QByteArray &bytes) const
     return QStringDecoder(m_encoding).decode(bytes);
 }
 
+#endif // QT_CONFIG(process)
 
 void registerProcess(QJSEngine *jsEngine)
 {
+#if QT_CONFIG(process)
     jsEngine->globalObject().setProperty(QStringLiteral("Process"),
                                          jsEngine->newQMetaObject<ScriptProcess>());
+#else
+    Q_UNUSED(jsEngine)
+#endif
 }
 
 } // namespace Tiled
 
+#if QT_CONFIG(process)
 #include "scriptprocess.moc"
+#endif
