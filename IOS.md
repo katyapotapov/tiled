@@ -6,16 +6,18 @@ Tiled edits the files in that clone through the Files app.
 
 ## Setup (once)
 
-1. In the git app, sign in to GitHub and clone the repository (e.g. `gusty`).
+1. In the git app, sign in to GitHub and clone the repository containing the
+   levels. Gusty's levels are in the `snowball` repository.
 2. Make sure the clone shows up in the Files app under the git app's location.
-3. In Tiled, choose **File > Open Folder...** and pick the **root of the
-   repository**, not a subfolder. Levels can refer to files elsewhere in the
-   repository (gusty's levels use `../images/*.png`), and Tiled can only
-   read what's inside the folder you picked.
+3. In Tiled, tap **Open Folder** and pick a folder that contains both the
+   levels and the files they refer to, since Tiled can only read what's inside
+   the folder you picked. For gusty, pick **`data/gusty`**: its levels (in
+   `levels/`) use the images in `images/`. Picking this folder rather than the
+   whole repository also keeps the **Levels** list short.
 
-Tiled opens the first `.tiled-project` it finds in that folder (for gusty,
-`levels/gusty.tiled-project`), and remembers its access to the folder across
-launches.
+Tiled opens the first `.tiled-project` it finds in that folder. When there is
+none (as in snowball), it opens the folder as an unsaved project. Either way,
+Tiled remembers its access to the folder across launches.
 
 ## Day to day
 
@@ -25,6 +27,10 @@ launches.
 
 Avoid pulling while the same levels are open in Tiled; reopen them after a
 pull to see the changes.
+
+Levels last saved with Tiled 1.9 change a little more than expected the first
+time they're saved: objects get a `"type"` instead of a `"class"` key, and an
+`"opacity"` key. Gusty doesn't read either, so this is only noise in the diff.
 
 ## Touch interface
 
