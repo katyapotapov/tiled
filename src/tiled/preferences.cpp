@@ -26,6 +26,7 @@
 #include "savefile.h"
 #include "session.h"
 #include "tilesetmanager.h"
+#include "utils.h"
 
 #include <QApplication>
 #include <QDir>
@@ -38,6 +39,13 @@ using namespace Tiled;
 
 constexpr auto snapModeKey = "Interface/SnapMode";
 constexpr auto snapToGridKey = "Interface/SnapToGrid";
+
+// Snapping to the grid is usually wanted on touch screens, where placing
+// things precisely is harder
+static SnapMode defaultSnapMode()
+{
+    return Utils::isMobileUi() ? SnapMode::Grid : SnapMode::None;
+}
 constexpr auto snapToFineGridKey = "Interface/SnapToFineGrid";
 constexpr auto snapToPixelsKey = "Interface/SnapToPixels";
 
@@ -153,7 +161,7 @@ void Preferences::initialize()
     }
 
     if (!contains(QLatin1String(snapModeKey))) {
-        SnapMode mode = SnapMode::None;
+        SnapMode mode = defaultSnapMode();
 
         // Preserve legacy behavior when multiple old flags were enabled:
         // grid snapping took priority over fine grid, and pixel snapping only
@@ -215,7 +223,7 @@ bool Preferences::parallaxEnabled() const
 
 SnapMode Preferences::snapMode() const
 {
-    return toSnapMode(get(snapModeKey, static_cast<int>(SnapMode::None)));
+    return toSnapMode(get(snapModeKey, static_cast<int>(defaultSnapMode())));
 }
 
 QColor Preferences::gridColor() const

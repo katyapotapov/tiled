@@ -1240,11 +1240,22 @@ void ObjectSelectionTool::startMoving(const QPointF &pos,
     mStart = pos;
     mAction = Moving;
     mMergeUndo = false;
-    mAlignPosition = mMovingObjects.first().oldPosition;
+    // On mobile, snap the objects' corners rather than their origins, so that
+    // tile objects keep filling whole grid cells regardless of their alignment
+    const Map *map = mapDocument()->map();
+    auto alignPosition = [map] (const MovingObject &object) {
+        if (!Utils::isMobileUi())
+            return object.oldPosition;
+
+        const Alignment alignment = object.mapObject->alignment(map);
+        return object.oldPosition - alignmentOffset(object.oldSize, alignment);
+    };
+
+    mAlignPosition = alignPosition(mMovingObjects.first());
     mOriginPos = mOriginIndicator->pos();
 
     for (const MovingObject &object : std::as_const(mMovingObjects)) {
-        const QPointF &pos = object.oldPosition;
+        const QPointF pos = alignPosition(object);
         if (pos.x() < mAlignPosition.x())
             mAlignPosition.setX(pos.x());
         if (pos.y() < mAlignPosition.y())

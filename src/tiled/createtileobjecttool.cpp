@@ -67,9 +67,18 @@ void CreateTileObjectTool::mouseMovedWhileCreatingObject(const QPointF &pos, Qt:
     const QPointF offset = alignmentOffset(screenBounds, newMapObject->alignment(mapDocument()->map()));
 
     const MapRenderer *renderer = mapDocument()->renderer();
-    QPointF pixelCoords = renderer->screenToPixelCoords(screenBounds.topLeft() + offset);
+    QPointF pixelCoords;
 
-    SnapHelper(renderer, modifiers).snap(pixelCoords);
+    if (Utils::isMobileUi()) {
+        // Snap the object's corner rather than its origin, so that it fills
+        // whole grid cells regardless of its alignment
+        QPointF topLeft = renderer->screenToPixelCoords(screenBounds.topLeft());
+        SnapHelper(renderer, modifiers).snap(topLeft);
+        pixelCoords = renderer->screenToPixelCoords(renderer->pixelToScreenCoords(topLeft) + offset);
+    } else {
+        pixelCoords = renderer->screenToPixelCoords(screenBounds.topLeft() + offset);
+        SnapHelper(renderer, modifiers).snap(pixelCoords);
+    }
 
     newMapObject->setPosition(pixelCoords);
     mNewMapObjectItem->syncWithMapObject();

@@ -2461,6 +2461,20 @@ void MainWindow::setupMobileLayout()
     moreMenu->addSeparator();
     moreMenu->addAction(mUi->actionMapProperties);
     moreMenu->addAction(mUi->actionResizeMap);
+    moreMenu->addSeparator();
+
+    // A plain toggle, since the other snapping modes are rarely useful on
+    // touch screens
+    auto preferences = Preferences::instance();
+    auto snapToGridAction = moreMenu->addAction(tr("Snap to Grid"));
+    snapToGridAction->setCheckable(true);
+    snapToGridAction->setChecked(preferences->snapMode() == SnapMode::Grid);
+    connect(snapToGridAction, &QAction::toggled, preferences, [preferences] (bool checked) {
+        preferences->setSnapMode(checked ? SnapMode::Grid : SnapMode::None);
+    });
+    connect(preferences, &Preferences::snapModeChanged, snapToGridAction, [snapToGridAction] (SnapMode snapMode) {
+        snapToGridAction->setChecked(snapMode == SnapMode::Grid);
+    });
 
     auto moreButton = new QToolButton(mAppBar);
     moreButton->setText(tr("More"));
